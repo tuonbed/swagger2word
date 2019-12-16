@@ -1,3 +1,15 @@
+20191216更新
+当存在未在controller设置@Api，但是在各个具体接口里@ApiOperation(tags =的情况。此类情况以前的类似这些接口导不出来，现在修改为取得具体接口时会再去判断tags是否存在，如果不存在，将创建tags。避免接口丢失。
+
+在原有https://github.com/JMCuixy/swagger2word的基础上，实现以下功能。
+1. 展示和下载，可同时将多个应用整合在一起。swagger.urls 多个应用地址以;隔开，同原版一样，可以使用配置或参数形式均可。
+2. 添加swagger.name，或者参数传进来充当标题或者下载的word文件名。
+3. 带有序号更好区分。根据应用一级标题，接口标题二级标题，具体接口三级标题设置文档的序号。如 1.1.1 ，1.1.2等。
+4. tags合并。如果某个接口在多个tags合并的话更方便，及定义某controller类接口名称为A，在其他controller里某些方法tags指定为A，B，那么
+在A和B的tags里，都会将该接口展示出来。并且根据tags进行排序，避免tags自定义此类情况，同一tags不在一起的情况。
+5. 增加每个应用的内容，标题，说明，版本，作者。
+
+
 ### 使用步骤（Google Chrome）
 1. 
     - 修改 application.yml 文件的<strong> swagger.url </strong>为Swagger Json资源的url地址。
