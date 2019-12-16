@@ -154,12 +154,139 @@ public class WordService2Impl implements WordService2 {
                         for (Request request : requestList) {
                             request.setParamType(request.getParamType().replaceAll("#/definitions/", ""));
                         }
+public List<Map<String, Map>> apiMap(String[] jsonUrls) {
+        List<Map<String, Map>> reList=new ArrayList<>();
+        
+        for (String jsonUrl : jsonUrls) {
+            Map<String,Map> tagsMap=new HashMap();
+            Map<String, Tags> returnMap=new TreeMap<String, Tags>((s1, s2)->s1.compareTo(s2) );
+            List<Table> result = new ArrayList<>();
+            try {
+                String jsonStr = myRestTemplate.getForObject(jsonUrl, String.class);
+                // convert JSON string to Map
+                Map<String, Object> map = JsonUtils.readValue(jsonStr, HashMap.class);
+                //tags
+                List<Map<String,String>> tagsList= (List)map.get("tags");
+                tagsList.forEach(m->{
+                    returnMap.put(m.get("name"),new Tags(m.get("name")));
+                });
+
+                Map<String, String> infoMap=new HashMap();
+                infoMap.put("description",(String)((Map)map.get("info")).get("description"));
+                infoMap.put("version",(String)((Map)map.get("info")).get("version"));
+                infoMap.put("title",(String)((Map)map.get("info")).get("title"));
+                infoMap.put("author",(String)((Map)((Map)map.get("info")).get("contact")).get("name"));
+                infoMap.put("basePath",(String)map.get("basePath"));
+                tagsMap.put("apiInfo",infoMap);
+//                tagsMap.put("tags",returnMap);
+                reList.add(tagsMap);
+                //解析paths
+                Map<String, LinkedHashMap> paths = (LinkedHashMap) map.get("paths");
+                if (paths != null) {
+                    List<String> tagsString;
+                    Iterator<Map.Entry<String, LinkedHashMap>> it = paths.entrySet().iterator();
+                    while (it.hasNext()) {
+                        tagsString=new ArrayList<>();
+                        Map.Entry<String, LinkedHashMap> path = it.next();
+
+                        Iterator<Map.Entry<String, LinkedHashMap>> it2 = path.getValue().entrySet().iterator();
+                        // 1.请求路径
+                        String url = path.getKey();
+                        // 2.请求方式，类似为 get,post,delete,put 这样
+                        String requestType = StringUtil.join(path.getValue().keySet(), ",");
+                        //不管有几种请求方式，都只解析第一种
+                        Map.Entry<String, LinkedHashMap> firstRequest = it2.next();
+                        Map<String, Object> content = firstRequest.getValue();
+                        // 4. 大标题（类说明）
+                        tagsString=(List)content.get("tags");
+
+                        String title = String.valueOf(((List) content.get("tags")).get(0));
+                        // 5.小标题 （方法说明）
+                        String tag = String.valueOf(content.get("summary"));
+                        // 6.接口描述
+                        String description = String.valueOf(content.get("summary"));
+                        // 7.请求参数格式，类似于 multipart/form-data
+                        String requestForm = "";
+                        List<String> consumes = (List) content.get("consumes");
+                        if (consumes != null && consumes.size() > 0) {
+                            requestForm = StringUtil.join(consumes, ",");
+                        }
+                        // 8.返回参数格式，类似于 application/json
+                        String responseForm = "";
+                        List<String> produces = (List) content.get("produces");
+                        if (produces != null && produces.size() > 0) {
+                            responseForm = StringUtil.join(produces, ",");
+                        }
+                        // 9. 请求体
+                        List<MyRequest> requestList = new ArrayList<>();
+                        List<LinkedHashMap> parameters = (ArrayList) content.get("parameters");
+                        if (!CollectionUtils.isEmpty(parameters)) {
+                            for (Map<String, Object> param : parameters) {
+                                MyRequest request = new MyRequest();
+                                request.setName(String.valueOf(param.get("name")));
+                                Object in = param.get("in");
+                                if (in != null && "body".equals(in)) {
+                                    request.setType(String.valueOf(in));
+                                    Map<String, Object> schema = (Map) param.get("schema");
+                                    Object ref = schema.get("$ref");
+                                    // 数组情况另外处理
+                                    if (schema.get("type") != null && "array".equals(schema.get("type"))) {
+                                        ref = ((Map) schema.get("items")).get("$ref");
+                                    }
+                                    request.setParamType(ref == null ? "{}" : ref.toString());
+                                } else {
+                                    request.setType(param.get("type") == null ? "Object" : param.get("type").toString());
+                                    request.setParamType(String.valueOf(in));
+                                }
+                                request.setRequire((Boolean) param.get("required"));
+                                request.setRemark(String.valueOf(param.get("description")));
+                                requestList.add(request);
+                            }
+                        }
+                        // 10.返回体
+                        List<Response> responseList = new ArrayList<>();
+                        Map<String, Object> responses = (LinkedHashMap) content.get("responses");
+                        Iterator<Map.Entry<String, Object>> it3 = responses.entrySet().iterator();
+
+                        while (it3.hasNext()) {
+                            Response response = new Response();
+                            Map.Entry<String, Object> entry = it3.next();
+                            // 状态码 200 201 401 403 404 这样
+                            response.setName(entry.getKey());
+                            LinkedHashMap<String, Object> statusCodeInfo = (LinkedHashMap) entry.getValue();
+                            response.setDescription(String.valueOf(statusCodeInfo.get("description")));
+                            response.setRemark(String.valueOf(statusCodeInfo.get("description")));
+                            responseList.add(response);
+                        }
+
+                        //封装Table
+                        Table table = new Table();
+                        //是否添加为菜单
+                        if (MenuUtils.isMenu(title)) {
+                            table.setTitle(title);
+                        }
+                        table.setUrl(url);
+                        table.setTag(tag);
+                        table.setDescription(description);
+                        table.setRequestForm(requestForm);
+                        table.setResponseForm(responseForm);
+                        table.setRequestType(requestType);
+                        table.setResponseList(responseList);
+                        table.setRequestParam(JsonUtils.writeJsonStr(buildParamMap(requestList, map)));
+                        for (MyRequest request : requestList) {
+                            request.setParamType(request.getParamType().replaceAll("#/definitions/", ""));
+                        }
                         table.setRequestList(requestList);
                         // 取出来状态是200时的返回值
                         Object obj = responses.get("200");
                         if (obj == null) {
                             table.setResponseParam("");
                             tagsString.forEach(t->{
+                                //有可能存在未在类定义tags，但是直接在方法体定义tags的情况
+                                //这种情况就要先判断map里是否存在这个tags，如果不存在，就要先添加
+                                if(returnMap.get(t)==null){
+                                    returnMap.put(t,new Tags(t));
+                                }
                                 returnMap.get(t).getListTable().add(table);
                             });
                             //result.add(table);
@@ -170,6 +297,11 @@ public class WordService2Impl implements WordService2 {
                             table.setResponseParam("");
                             //result.add(table);
                             tagsString.forEach(t->{
+                                //有可能存在未在类定义tags，但是直接在方法体定义tags的情况
+                                //这种情况就要先判断map里是否存在这个tags，如果不存在，就要先添加
+                                if(returnMap.get(t)==null){
+                                    returnMap.put(t,new Tags(t));
+                                }
                                 returnMap.get(t).getListTable().add(table);
                             });
                             continue;
@@ -182,6 +314,11 @@ public class WordService2Impl implements WordService2 {
                             table.setResponseParam(objectNode.toString());
                             //result.add(table);
                             tagsString.forEach(t->{
+                                //有可能存在未在类定义tags，但是直接在方法体定义tags的情况
+                                //这种情况就要先判断map里是否存在这个tags，如果不存在，就要先添加
+                                if(returnMap.get(t)==null){
+                                    returnMap.put(t,new Tags(t));
+                                }
                                 returnMap.get(t).getListTable().add(table);
                             });
                             continue;
@@ -197,19 +334,34 @@ public class WordService2Impl implements WordService2 {
                             table.setResponseParam(arrayNode.toString());
                             //result.add(table);
                             tagsString.forEach(t->{
+                                //有可能存在未在类定义tags，但是直接在方法体定义tags的情况
+                                //这种情况就要先判断map里是否存在这个tags，如果不存在，就要先添加
+                                if(returnMap.get(t)==null){
+                                    returnMap.put(t,new Tags(t));
+                                }
                                 returnMap.get(t).getListTable().add(table);
                             });
                             continue;
                         }
                         //result.add(table);
                         tagsString.forEach(t->{
+                            //有可能存在未在类定义tags，但是直接在方法体定义tags的情况
+                            //这种情况就要先判断map里是否存在这个tags，如果不存在，就要先添加
+                            if(returnMap.get(t)==null){
+                                returnMap.put(t,new Tags(t));
+                            }
                             returnMap.get(t).getListTable().add(table);
                         });
                     }
                 }
             } catch (Exception e) {
-                log.error("parse error", e);
+                //log.error("parse error", e);
             }
+
+            //校验returnMap里是否存在tags
+            Map<String, Tags> collect = returnMap.entrySet().stream().filter((e) -> e.getValue().getListTable().size() > 0)
+                    .collect(Collectors.toMap((e) -> e.getKey(), (e) -> e.getValue()));
+            tagsMap.put("tags",collect);
         }
         
         
